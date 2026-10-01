@@ -1,0 +1,62 @@
+name: Import ChatGPT wallpaper
+
+on:
+  push:
+    paths:
+      - ".github/workflows/import-chatgpt-wallpaper.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  import-wallpaper:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Download exact uploaded wallpaper
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -L --fail --retry 3 -A "Mozilla/5.0" \
+            "https://w.wallhaven.cc/full/ly/wallhaven-lyderl.jpg" \
+            -o new_wallpaper_wide.jpg
+          echo "d2f8695efd9093589f0729873aa112f136916c6ee8e4755a26843a8a78e5b59e  new_wallpaper_wide.jpg" | sha256sum -c -
+
+      - name: Create portrait crop
+        shell: bash
+        run: |
+          python -m pip install --quiet Pillow
+          python - <<'PY'
+          from PIL import Image
+
+          src = "new_wallpaper_wide.jpg"
+          dst = "new_wallpaper_tall.jpg"
+
+          img = Image.open(src).convert("RGB")
+          w, h = img.size
+
+          # 4:5 crop, focused slightly left of center so the main figures remain visible.
+          crop_w = int(h * 4 / 5)
+          focus_x = int(w * 0.47)
+          left = max(0, min(w - crop_w, focus_x - crop_w // 2))
+          tall = img.crop((left, 0, left + crop_w, h))
+          tall = tall.resize((1200, 1500), Image.Resampling.LANCZOS)
+          tall.save(dst, "JPEG", quality=94, subsampling=0, optimize=True)
+          print("wide:", img.size, "tall:", tall.size)
+          PY
+
+      - name: Commit wallpaper files
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add new_wallpaper_wide.jpg new_wallpaper_tall.jpg
+          if git diff --cached --quiet; then
+            echo "No wallpaper changes to commit."
+            exit 0
+          fi
+          git commit -m "Add new ChatGPT wallpaper"
+          git push
